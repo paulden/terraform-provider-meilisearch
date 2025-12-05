@@ -70,3 +70,62 @@ resource "meilisearch_index" "test" {
 		},
 	})
 }
+
+func TestAccIndexResourceWithSettings(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create with settings
+			{
+				Config: providerConfig + `
+resource "meilisearch_index" "test" {
+	uid = "index-settings"
+	primary_key = "id"
+
+	ranking_rules = ["words", "typo", "proximity"]
+	searchable_attributes = ["title", "description"]
+	filterable_attributes = ["category", "status"]
+	sortable_attributes = ["created_at"]
+	stop_words = ["the", "a", "an"]
+	synonyms = {
+		"phone" = ["telephone", "mobile"]
+		"laptop" = ["computer", "notebook"]
+	}
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("meilisearch_index.test", "uid", "index-settings"),
+					resource.TestCheckResourceAttr("meilisearch_index.test", "primary_key", "id"),
+					resource.TestCheckResourceAttr("meilisearch_index.test", "ranking_rules.#", "3"),
+					resource.TestCheckResourceAttr("meilisearch_index.test", "ranking_rules.0", "words"),
+					// For sets, we check the count but not the order
+					resource.TestCheckResourceAttr("meilisearch_index.test", "searchable_attributes.#", "2"),
+					resource.TestCheckResourceAttr("meilisearch_index.test", "filterable_attributes.#", "2"),
+					resource.TestCheckResourceAttr("meilisearch_index.test", "stop_words.#", "3"),
+				),
+			},
+			// Update settings
+			{
+				Config: providerConfig + `
+resource "meilisearch_index" "test" {
+	uid = "index-settings"
+	primary_key = "id"
+
+	ranking_rules = ["words", "typo"]
+	searchable_attributes = ["title"]
+	filterable_attributes = ["category"]
+	sortable_attributes = ["created_at", "updated_at"]
+	stop_words = ["the"]
+	distinct_attribute = "category"
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("meilisearch_index.test", "ranking_rules.#", "2"),
+					resource.TestCheckResourceAttr("meilisearch_index.test", "searchable_attributes.#", "1"),
+					resource.TestCheckResourceAttr("meilisearch_index.test", "sortable_attributes.#", "2"),
+					resource.TestCheckResourceAttr("meilisearch_index.test", "distinct_attribute", "category"),
+				),
+			},
+		},
+	})
+}
