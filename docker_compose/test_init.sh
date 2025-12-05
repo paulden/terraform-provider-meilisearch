@@ -1,5 +1,7 @@
+MEILISEARCH_PORT=${MEILISEARCH_PORT:-7700}
+
 curl \
-  -X POST 'http://localhost:7700/keys' \
+  -X POST "http://localhost:${MEILISEARCH_PORT}/keys" \
   -H 'Authorization: Bearer T35T-M45T3R-K3Y' \
   -H 'Content-Type: application/json' \
   --data-binary '{
@@ -12,7 +14,7 @@ curl \
   }'
 
 curl \
-  -X POST 'http://localhost:7700/indexes' \
+  -X POST "http://localhost:${MEILISEARCH_PORT}/indexes" \
   -H 'Authorization: Bearer T35T-M45T3R-K3Y' \
   -H 'Content-Type: application/json' \
   --data-binary '{
@@ -21,7 +23,7 @@ curl \
   }'
 
 curl \
-  -X POST 'http://localhost:7700/indexes' \
+  -X POST "http://localhost:${MEILISEARCH_PORT}/indexes" \
   -H 'Authorization: Bearer T35T-M45T3R-K3Y' \
   -H 'Content-Type: application/json' \
   --data-binary '{

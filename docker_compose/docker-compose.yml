@@ -2,7 +2,7 @@ services:
   api:
     image: "getmeili/meilisearch:v1.7"
     ports:
-      - "7700:7700"
+      - "${MEILISEARCH_PORT:-7700}:7700"
     volumes:
       - meili_data:/meili_data
     environment:
