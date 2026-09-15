@@ -3,12 +3,12 @@
 page_title: "meilisearch_index Resource - meilisearch"
 subcategory: ""
 description: |-
-  Manages a Meilisearch Index.
+  Manages a Meilisearch Index and its settings.
 ---
 
 # meilisearch_index (Resource)
 
-Manages a Meilisearch Index.
+Manages a Meilisearch Index and its settings.
 
 ## Example Usage
 
@@ -17,6 +17,61 @@ Manages a Meilisearch Index.
 resource "meilisearch_index" "example" {
 	uid = "index-name"
 	primary_key = "key-name"
+}
+
+# Create a Meilisearch Index with settings configured
+resource "meilisearch_index" "example_with_settings" {
+	uid         = "products"
+	primary_key = "id"
+
+	ranking_rules         = ["words", "typo", "proximity", "attribute", "sort", "exactness"]
+	searchable_attributes = ["title", "description"]
+	filterable_attributes = ["category", "status"]
+	sortable_attributes   = ["created_at"]
+	stop_words            = ["the", "a", "an"]
+	distinct_attribute    = "sku"
+	search_cutoff_ms      = 150
+	proximity_precision   = "byWord"
+
+	synonyms = {
+		"phone"  = ["telephone", "mobile"]
+		"laptop" = ["computer", "notebook"]
+	}
+
+	typo_tolerance = {
+		enabled = true
+		min_word_size_for_typos = {
+			one_typo  = 4
+			two_typos = 8
+		}
+		disable_on_attributes = ["sku"]
+	}
+
+	pagination = {
+		max_total_hits = 1000
+	}
+
+	faceting = {
+		max_values_per_facet = 100
+		sort_facet_values_by = {
+			"*" = "alpha"
+		}
+	}
+
+	localized_attributes = [
+		{
+			locales            = ["fra"]
+			attribute_patterns = ["description"]
+		}
+	]
+
+	embedders = {
+		"default" = {
+			source            = "userProvided"
+			dimensions        = 512
+			document_template = "{{doc.title}} - {{doc.description}}"
+		}
+	}
 }
 ```
 
@@ -28,11 +83,93 @@ resource "meilisearch_index" "example" {
 - `primary_key` (String) Primary key of the index (`null` if not specified and if no documents have been added yet, see [official documentation](https://www.meilisearch.com/docs/learn/core_concepts/primary_key#meilisearch-guesses-your-primary-key) for more details).
 - `uid` (String) Unique identifier of the index.
 
+### Optional
+
+- `dictionary` (Set of String) Set of words considered as a single term by the tokenizer.
+- `displayed_attributes` (Set of String) Set of attributes to display in search results. If empty or not set, all attributes are displayed. Default is ["*"].
+- `distinct_attribute` (String) Search returns documents with distinct (different) values of the given field. Only one document per value will be returned.
+- `embedders` (Attributes Map) Map of embedder name to embedder configuration, used for AI-powered search. (see [below for nested schema](#nestedatt--embedders))
+- `faceting` (Attributes) Controls faceting settings. (see [below for nested schema](#nestedatt--faceting))
+- `filterable_attributes` (Set of String) Set of attributes that can be used as filters in search queries.
+- `localized_attributes` (Attributes List) List of localized attribute rules, associating attribute patterns with locales. (see [below for nested schema](#nestedatt--localized_attributes))
+- `non_separator_tokens` (Set of String) Set of characters or words normally treated as separators that should instead be treated as normal characters.
+- `pagination` (Attributes) Controls pagination settings. (see [below for nested schema](#nestedatt--pagination))
+- `proximity_precision` (String) Precision level when calculating the proximity ranking rule. One of "byWord" or "byAttribute".
+- `ranking_rules` (List of String) Ordered list of ranking rules applied to search results. Default is ["words", "typo", "proximity", "attribute", "sort", "exactness"].
+- `search_cutoff_ms` (Number) Maximum duration, in milliseconds, of a search query.
+- `searchable_attributes` (Set of String) Set of attributes to search in. If empty or not set, all attributes are searchable. Default is ["*"].
+- `separator_tokens` (Set of String) Set of characters or words treated as word separators by the tokenizer.
+- `sortable_attributes` (Set of String) Set of attributes that can be used to sort search results.
+- `stop_words` (Set of String) Set of words that will be ignored in search queries.
+- `synonyms` (Map of List of String) Map of synonyms where the key is a word and the value is a list of synonyms for that word.
+- `typo_tolerance` (Attributes) Controls the typo tolerance feature. (see [below for nested schema](#nestedatt--typo_tolerance))
+
 ### Read-Only
 
 - `created_at` (String) Date and time when the key was created (RFC3339)
 - `id` (String) Placeholder identifier attribute.
 - `updated_at` (String) Date and time when the key was last updated (RFC3339)
+
+<a id="nestedatt--embedders"></a>
+### Nested Schema for `embedders`
+
+Optional:
+
+- `api_key` (String, Sensitive) API key, for "openAi", "rest" or "ollama" sources.
+- `dimensions` (Number) Number of dimensions in the embedding output.
+- `document_template` (String) Template describing the data Meilisearch sends the embedder.
+- `headers` (Map of String) Map of extra HTTP headers, for the "rest" source.
+- `model` (String) Model name, for "openAi", "huggingFace" or "ollama" sources.
+- `request` (String) JSON-encoded request body template, for the "rest" source.
+- `response` (String) JSON-encoded response body template, for the "rest" source.
+- `revision` (String) Model revision, for the "huggingFace" source.
+- `source` (String) Embedder source: "openAi", "huggingFace", "userProvided", "rest", or "ollama".
+- `url` (String) URL for "openAi", "rest" or "ollama" sources.
+
+
+<a id="nestedatt--faceting"></a>
+### Nested Schema for `faceting`
+
+Optional:
+
+- `max_values_per_facet` (Number) Maximum number of facet values returned for each facet.
+- `sort_facet_values_by` (Map of String) Map of facet name (or "*") to sort order, "alpha" or "count".
+
+
+<a id="nestedatt--localized_attributes"></a>
+### Nested Schema for `localized_attributes`
+
+Optional:
+
+- `attribute_patterns` (Set of String) Set of attribute name patterns this rule applies to.
+- `locales` (Set of String) Set of locales to apply to the matched attributes.
+
+
+<a id="nestedatt--pagination"></a>
+### Nested Schema for `pagination`
+
+Optional:
+
+- `max_total_hits` (Number) Maximum number of search results that can be returned.
+
+
+<a id="nestedatt--typo_tolerance"></a>
+### Nested Schema for `typo_tolerance`
+
+Optional:
+
+- `disable_on_attributes` (Set of String) Set of attributes for which typo tolerance is disabled.
+- `disable_on_words` (Set of String) Set of words for which typo tolerance is disabled.
+- `enabled` (Boolean) Whether typo tolerance is enabled.
+- `min_word_size_for_typos` (Attributes) Minimum word size for accepting typos. (see [below for nested schema](#nestedatt--typo_tolerance--min_word_size_for_typos))
+
+<a id="nestedatt--typo_tolerance--min_word_size_for_typos"></a>
+### Nested Schema for `typo_tolerance.min_word_size_for_typos`
+
+Optional:
+
+- `one_typo` (Number) Minimum word size to accept one typo.
+- `two_typos` (Number) Minimum word size to accept two typos.
 
 ## Import
 

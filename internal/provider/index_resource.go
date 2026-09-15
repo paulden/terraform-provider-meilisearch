@@ -33,11 +33,29 @@ type indexResource struct {
 }
 
 type indexResourceModel struct {
-	UID        types.String `tfsdk:"uid"`
-	PrimaryKey types.String `tfsdk:"primary_key"`
-	CreatedAt  types.String `tfsdk:"created_at"`
-	UpdatedAt  types.String `tfsdk:"updated_at"`
-	ID         types.String `tfsdk:"id"`
+	UID                  types.String `tfsdk:"uid"`
+	PrimaryKey           types.String `tfsdk:"primary_key"`
+	CreatedAt            types.String `tfsdk:"created_at"`
+	UpdatedAt            types.String `tfsdk:"updated_at"`
+	ID                   types.String `tfsdk:"id"`
+	RankingRules         types.List   `tfsdk:"ranking_rules"`
+	DistinctAttribute    types.String `tfsdk:"distinct_attribute"`
+	SearchableAttributes types.Set    `tfsdk:"searchable_attributes"`
+	DisplayedAttributes  types.Set    `tfsdk:"displayed_attributes"`
+	FilterableAttributes types.Set    `tfsdk:"filterable_attributes"`
+	SortableAttributes   types.Set    `tfsdk:"sortable_attributes"`
+	StopWords            types.Set    `tfsdk:"stop_words"`
+	Synonyms             types.Map    `tfsdk:"synonyms"`
+	Dictionary           types.Set    `tfsdk:"dictionary"`
+	SearchCutoffMs       types.Int64  `tfsdk:"search_cutoff_ms"`
+	ProximityPrecision   types.String `tfsdk:"proximity_precision"`
+	SeparatorTokens      types.Set    `tfsdk:"separator_tokens"`
+	NonSeparatorTokens   types.Set    `tfsdk:"non_separator_tokens"`
+	TypoTolerance        types.Object `tfsdk:"typo_tolerance"`
+	Pagination           types.Object `tfsdk:"pagination"`
+	Faceting             types.Object `tfsdk:"faceting"`
+	LocalizedAttributes  types.List   `tfsdk:"localized_attributes"`
+	Embedders            types.Map    `tfsdk:"embedders"`
 }
 
 // Metadata returns the resource type name.
@@ -47,36 +65,42 @@ func (r *indexResource) Metadata(_ context.Context, req resource.MetadataRequest
 
 // Schema defines the schema for the resource.
 func (r *indexResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	resp.Schema = schema.Schema{
-		Description: "Manages a Meilisearch Index.",
-		Attributes: map[string]schema.Attribute{
-			"uid": schema.StringAttribute{
-				Description: "Unique identifier of the index.",
-				Required:    true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"primary_key": schema.StringAttribute{
-				Description: "Primary key of the index (`null` if not specified and if no documents have been added yet, see [official documentation](https://www.meilisearch.com/docs/learn/core_concepts/primary_key#meilisearch-guesses-your-primary-key) for more details).",
-				Required:    true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"created_at": schema.StringAttribute{
-				Description: "Date and time when the key was created (RFC3339)",
-				Computed:    true,
-			},
-			"updated_at": schema.StringAttribute{
-				Description: "Date and time when the key was last updated (RFC3339)",
-				Computed:    true,
-			},
-			"id": schema.StringAttribute{
-				Description: "Placeholder identifier attribute.",
-				Computed:    true,
+	attributes := map[string]schema.Attribute{
+		"uid": schema.StringAttribute{
+			Description: "Unique identifier of the index.",
+			Required:    true,
+			PlanModifiers: []planmodifier.String{
+				stringplanmodifier.RequiresReplace(),
 			},
 		},
+		"primary_key": schema.StringAttribute{
+			Description: "Primary key of the index (`null` if not specified and if no documents have been added yet, see [official documentation](https://www.meilisearch.com/docs/learn/core_concepts/primary_key#meilisearch-guesses-your-primary-key) for more details).",
+			Required:    true,
+			PlanModifiers: []planmodifier.String{
+				stringplanmodifier.RequiresReplace(),
+			},
+		},
+		"created_at": schema.StringAttribute{
+			Description: "Date and time when the key was created (RFC3339)",
+			Computed:    true,
+		},
+		"updated_at": schema.StringAttribute{
+			Description: "Date and time when the key was last updated (RFC3339)",
+			Computed:    true,
+		},
+		"id": schema.StringAttribute{
+			Description: "Placeholder identifier attribute.",
+			Computed:    true,
+		},
+	}
+
+	for name, attribute := range indexSettingsSchemaAttributes() {
+		attributes[name] = attribute
+	}
+
+	resp.Schema = schema.Schema{
+		Description: "Manages a Meilisearch Index and its settings.",
+		Attributes:  attributes,
 	}
 }
 
@@ -147,6 +171,22 @@ func (r *indexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		plan.CreatedAt = types.StringValue(index.CreatedAt.Format(time.RFC3339))
 		plan.UpdatedAt = types.StringValue(index.UpdatedAt.Format(time.RFC3339))
 
+		settings := r.buildSettingsFromPlan(ctx, &plan, &resp.Diagnostics)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+
+		if settings != nil {
+			if err := r.applySettings(ctx, index.UID, settings); err != nil {
+				resp.Diagnostics.AddError("Error updating index settings", err.Error())
+				return
+			}
+		}
+
+		r.readSettings(ctx, index.UID, &plan, &resp.Diagnostics)
+		if resp.Diagnostics.HasError() {
+			return
+		}
 	}
 
 	plan.ID = types.StringValue("placeholder")
@@ -196,6 +236,11 @@ func (r *indexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 
 	state = indexState
 
+	r.readSettings(ctx, index.UID, &state, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	state.ID = types.StringValue("placeholder")
 
 	// Set refreshed state
@@ -208,7 +253,58 @@ func (r *indexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 
 // Update updates the resource and sets the updated Terraform state on success.
 func (r *indexResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	// Not implemented for now, no attributes can be changed
+	var plan indexResourceModel
+	diags := req.Plan.Get(ctx, &plan)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	var state indexResourceModel
+	diags = req.State.Get(ctx, &state)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	settings := r.buildSettingsFromPlan(ctx, &plan, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if settings != nil {
+		if err := r.applySettings(ctx, state.UID.ValueString(), settings); err != nil {
+			resp.Diagnostics.AddError("Error updating index settings", err.Error())
+			return
+		}
+	}
+
+	index, err := r.client.GetIndex(state.UID.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Error reading index after update",
+			"Could not read index: "+err.Error(),
+		)
+		return
+	}
+
+	plan.UID = types.StringValue(index.UID)
+	plan.PrimaryKey = types.StringValue(index.PrimaryKey)
+	plan.CreatedAt = types.StringValue(index.CreatedAt.Format(time.RFC3339))
+	plan.UpdatedAt = types.StringValue(index.UpdatedAt.Format(time.RFC3339))
+
+	r.readSettings(ctx, index.UID, &plan, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	plan.ID = types.StringValue("placeholder")
+
+	diags = resp.State.Set(ctx, &plan)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 }
 
 // Delete deletes the resource and removes the Terraform state on success.
