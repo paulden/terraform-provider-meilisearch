@@ -50,6 +50,8 @@ resource "meilisearch_key" "example" {
 
 Import is supported using the following syntax:
 
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
 ```shell
 # Keys can be imported by specifying the UID used by Meilisearch.
 terraform import meilisearch_key.example 11111111-2222-3333-4444-555555555555
