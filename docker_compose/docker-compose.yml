@@ -1,6 +1,6 @@
 services:
   api:
-    image: "getmeili/meilisearch:v1.7"
+    image: "getmeili/meilisearch:v1.53.2"
     ports:
       - "7700:7700"
     volumes:

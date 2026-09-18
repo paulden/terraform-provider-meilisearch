@@ -1,13 +1,13 @@
 # Terraform Provider testing workflow.
 name: Tests
 
-# This GitHub action runs your tests for each pull request and push.
-# Optionally, you can turn it on using a schedule for regular testing.
 on:
   pull_request:
     paths-ignore:
       - 'README.md'
   push:
+    branches:
+      - main
     paths-ignore:
       - 'README.md'
 
@@ -48,25 +48,38 @@ jobs:
           git diff --compact-summary --exit-code || \
             (echo; echo "Unexpected difference in directories after code generation. Run 'go generate ./...' command and commit."; exit 1)
 
-  # Run acceptance tests in a matrix with Terraform CLI versions
+  # Run acceptance tests with different Terraform and Meilisearch versions
   test:
-    name: Terraform Provider Acceptance Tests
+    name: Terraform ${{ matrix.terraform }} / Meilisearch ${{ matrix.meilisearch }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        # list whatever Terraform versions here you would like to support
-        terraform:
-          - '1.0.*'
-          - '1.4.*'
-          - '1.8.*'
-          - '1.12.*'
-          - '1.16.*'
+        include:
+          # Run tests on Meilisearch versions 1.7, 1.15, 1.30, 1.50 with Terraform version 1.16
+          - terraform: '1.16.*'
+            meilisearch: 'v1.7'
+          - terraform: '1.16.*'
+            meilisearch: 'v1.15'
+          - terraform: '1.16.*'
+            meilisearch: 'v1.30'
+          - terraform: '1.16.*'
+            meilisearch: 'v1.50'
+
+          # Run tests on Terraform versions 1.0, 1.4, 1.8, 1.12 with Meilisearch version 1.50
+          - terraform: '1.0.*'
+            meilisearch: 'v1.50'
+          - terraform: '1.4.*'
+            meilisearch: 'v1.50'
+          - terraform: '1.8.*'
+            meilisearch: 'v1.50'
+          - terraform: '1.12.*'
+            meilisearch: 'v1.50'
     services:
       meilisearch:
-        image: "getmeili/meilisearch:v1.0"
+        image: "getmeili/meilisearch:${{ matrix.meilisearch }}"
         env:
           MEILI_MASTER_KEY: "T35T-M45T3R-K3Y"
         ports:
