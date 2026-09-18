@@ -115,6 +115,8 @@ make testacc
 
 Tests are run against a Meilisearch Docker container to ease development (see `docker_compose/` folder). The task will:
 - Start a Docker container running a Meilisearch instance
+  - The Meilisearch version used is defined in the `docker_compose/docker-compose.yml` file, which is v1.7 for now and is editable for testing purposes.
+  - CI tests are run on different Meilisearch versions (see GitHub Action), we don't want to break compatibility with old versions.
 - Seed data on the Meilisearch instance
 - Run Terraform tests from the provider
 - Clean up Docker volume
