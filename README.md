@@ -48,7 +48,7 @@ _This template repository is built on the [Terraform Plugin Framework](https://g
 ### Requirements
 
 - [Terraform](https://www.terraform.io/downloads.html) >= 1.0
-- [Go](https://golang.org/doc/install) >= 1.23
+- [Go](https://golang.org/doc/install) >= 1.27
 - [Docker](https://docs.docker.com/engine/install/) and [docker-compose](https://docs.docker.com/compose/install/) >= 3.7 for development
 - [golangci-lint](https://golangci-lint.run/usage/install/) for development
 

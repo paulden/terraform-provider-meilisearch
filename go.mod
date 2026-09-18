@@ -1,8 +1,6 @@
 module terraform-provider-meilisearch
 
-go 1.23.0
-
-toolchain go1.24.1
+go 1.27.0
 
 require (
 	github.com/hashicorp/terraform-plugin-docs v0.21.0
