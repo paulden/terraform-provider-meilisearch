@@ -50,11 +50,14 @@ resource "meilisearch_index" "example_with_settings" {
 		}
 	]
 
+	# Which fields an embedder accepts depends on its source: `userProvided` takes
+	# only `dimensions` (plus `distribution` and `binary_quantized`), and rejects
+	# `document_template`, which belongs to the openAi, huggingFace, ollama and
+	# rest sources.
 	embedders = {
 		"default" = {
-			source            = "userProvided"
-			dimensions        = 512
-			document_template = "{{doc.title}} - {{doc.description}}"
+			source     = "userProvided"
+			dimensions = 512
 		}
 	}
 }

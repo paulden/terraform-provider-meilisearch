@@ -188,11 +188,12 @@ resource "meilisearch_index" "embedders_test" {
 	uid = "index-embedders"
 	primary_key = "id"
 
+	# Meilisearch rejects document_template for the userProvided source: it only
+	# accepts source, dimensions, distribution and binaryQuantized.
 	embedders = {
 		"default" = {
-			source            = "userProvided"
-			dimensions        = 512
-			document_template = "{{doc.title}}"
+			source     = "userProvided"
+			dimensions = 512
 		}
 	}
 }
@@ -201,6 +202,128 @@ resource "meilisearch_index" "embedders_test" {
 					resource.TestCheckResourceAttr("meilisearch_index.embedders_test", "embedders.default.source", "userProvided"),
 					resource.TestCheckResourceAttr("meilisearch_index.embedders_test", "embedders.default.dimensions", "512"),
 				),
+			},
+			// Removing the embedders block resets it server-side.
+			{
+				Config: providerConfig + `
+resource "meilisearch_index" "embedders_test" {
+	uid = "index-embedders"
+	primary_key = "id"
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckNoResourceAttr("meilisearch_index.embedders_test", "embedders.%"),
+					testCheckSettingAbsent("index-embedders", "embedders", "default"),
+				),
+			},
+		},
+	})
+}
+
+// TestAccIndexResourceSettingsUnset covers the two ways a practitioner stops
+// managing a setting: emptying it, and removing it from the configuration
+// entirely. Both must reach Meilisearch rather than lingering in state.
+func TestAccIndexResourceSettingsUnset(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig + `
+resource "meilisearch_index" "unset_test" {
+	uid = "index-unset"
+	primary_key = "id"
+
+	stop_words            = ["the", "a"]
+	searchable_attributes = ["title", "body"]
+	sortable_attributes   = ["created_at"]
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("meilisearch_index.unset_test", "stop_words.#", "2"),
+					resource.TestCheckResourceAttr("meilisearch_index.unset_test", "searchable_attributes.#", "2"),
+					testCheckSettingJSON("index-unset", "stopWords", `["a","the"]`),
+				),
+			},
+			// An explicit empty list must actually clear the setting server-side,
+			// not be dropped by `omitempty` and silently keep the old value.
+			{
+				Config: providerConfig + `
+resource "meilisearch_index" "unset_test" {
+	uid = "index-unset"
+	primary_key = "id"
+
+	stop_words            = []
+	searchable_attributes = ["title", "body"]
+	sortable_attributes   = ["created_at"]
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("meilisearch_index.unset_test", "stop_words.#", "0"),
+					testCheckSettingJSON("index-unset", "stopWords", `[]`),
+				),
+			},
+			// Dropping attributes from the configuration resets them to the
+			// Meilisearch defaults: ["*"] for searchableAttributes, [] for
+			// sortableAttributes.
+			{
+				Config: providerConfig + `
+resource "meilisearch_index" "unset_test" {
+	uid = "index-unset"
+	primary_key = "id"
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckNoResourceAttr("meilisearch_index.unset_test", "stop_words.#"),
+					resource.TestCheckNoResourceAttr("meilisearch_index.unset_test", "searchable_attributes.#"),
+					testCheckSettingJSON("index-unset", "searchableAttributes", `["*"]`),
+					testCheckSettingJSON("index-unset", "sortableAttributes", `[]`),
+				),
+			},
+		},
+	})
+}
+
+// TestAccIndexResourceUnmanagedSettings checks that settings this resource does
+// not manage are left alone: changed out of band, they must not show up as
+// drift and must not be reverted on the next apply.
+func TestAccIndexResourceUnmanagedSettings(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig + `
+resource "meilisearch_index" "unmanaged_test" {
+	uid = "index-unmanaged"
+	primary_key = "id"
+
+	stop_words = ["the"]
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("meilisearch_index.unmanaged_test", "stop_words.#", "1"),
+					resource.TestCheckNoResourceAttr("meilisearch_index.unmanaged_test", "ranking_rules.#"),
+					// Set a setting the configuration does not mention.
+					setSettingOutOfBand("index-unmanaged", "sortable-attributes", `["created_at"]`),
+				),
+			},
+			{
+				Config: providerConfig + `
+resource "meilisearch_index" "unmanaged_test" {
+	uid = "index-unmanaged"
+	primary_key = "id"
+
+	stop_words = ["the"]
+}
+`,
+				// The out-of-band setting is not managed here, so it must not
+				// appear as a diff...
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectEmptyPlan(),
+					},
+				},
+				// ...nor be reverted.
+				Check: testCheckSettingJSON("index-unmanaged", "sortableAttributes", `["created_at"]`),
 			},
 		},
 	})

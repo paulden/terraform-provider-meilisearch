@@ -65,11 +65,14 @@ resource "meilisearch_index" "example_with_settings" {
 		}
 	]
 
+	# Which fields an embedder accepts depends on its source: `userProvided` takes
+	# only `dimensions` (plus `distribution` and `binary_quantized`), and rejects
+	# `document_template`, which belongs to the openAi, huggingFace, ollama and
+	# rest sources.
 	embedders = {
 		"default" = {
-			source            = "userProvided"
-			dimensions        = 512
-			document_template = "{{doc.title}} - {{doc.description}}"
+			source     = "userProvided"
+			dimensions = 512
 		}
 	}
 }
@@ -86,18 +89,18 @@ resource "meilisearch_index" "example_with_settings" {
 ### Optional
 
 - `dictionary` (Set of String) Set of words considered as a single term by the tokenizer.
-- `displayed_attributes` (Set of String) Set of attributes to display in search results. If empty or not set, all attributes are displayed. Default is ["*"].
+- `displayed_attributes` (Set of String) Set of attributes to display in search results. Defaults to ["*"] (all attributes) when not managed here.
 - `distinct_attribute` (String) Search returns documents with distinct (different) values of the given field. Only one document per value will be returned.
-- `embedders` (Attributes Map) Map of embedder name to embedder configuration, used for AI-powered search. (see [below for nested schema](#nestedatt--embedders))
+- `embedders` (Attributes Map) Map of embedder name to embedder configuration, used for AI-powered search. Which fields are accepted depends on `source`. (see [below for nested schema](#nestedatt--embedders))
 - `faceting` (Attributes) Controls faceting settings. (see [below for nested schema](#nestedatt--faceting))
 - `filterable_attributes` (Set of String) Set of attributes that can be used as filters in search queries.
 - `localized_attributes` (Attributes List) List of localized attribute rules, associating attribute patterns with locales. (see [below for nested schema](#nestedatt--localized_attributes))
 - `non_separator_tokens` (Set of String) Set of characters or words normally treated as separators that should instead be treated as normal characters.
 - `pagination` (Attributes) Controls pagination settings. (see [below for nested schema](#nestedatt--pagination))
 - `proximity_precision` (String) Precision level when calculating the proximity ranking rule. One of "byWord" or "byAttribute".
-- `ranking_rules` (List of String) Ordered list of ranking rules applied to search results. Default is ["words", "typo", "proximity", "attribute", "sort", "exactness"].
+- `ranking_rules` (List of String) Ordered list of ranking rules applied to search results. Defaults to ["words", "typo", "proximity", "attribute", "sort", "exactness"] when not managed here.
 - `search_cutoff_ms` (Number) Maximum duration, in milliseconds, of a search query.
-- `searchable_attributes` (Set of String) Set of attributes to search in. If empty or not set, all attributes are searchable. Default is ["*"].
+- `searchable_attributes` (Set of String) Set of attributes to search in. Defaults to ["*"] (all attributes) when not managed here.
 - `separator_tokens` (Set of String) Set of characters or words treated as word separators by the tokenizer.
 - `sortable_attributes` (Set of String) Set of attributes that can be used to sort search results.
 - `stop_words` (Set of String) Set of words that will be ignored in search queries.
@@ -115,9 +118,9 @@ resource "meilisearch_index" "example_with_settings" {
 
 Optional:
 
-- `api_key` (String, Sensitive) API key, for "openAi", "rest" or "ollama" sources.
+- `api_key` (String, Sensitive) API key, for "openAi", "rest" or "ollama" sources. Meilisearch redacts this on read, so it is never refreshed from the server.
 - `dimensions` (Number) Number of dimensions in the embedding output.
-- `document_template` (String) Template describing the data Meilisearch sends the embedder.
+- `document_template` (String) Template describing the data Meilisearch sends the embedder. Not accepted by the "userProvided" source.
 - `headers` (Map of String) Map of extra HTTP headers, for the "rest" source.
 - `model` (String) Model name, for "openAi", "huggingFace" or "ollama" sources.
 - `request` (String) JSON-encoded request body template, for the "rest" source.

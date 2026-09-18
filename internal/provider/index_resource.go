@@ -155,38 +155,32 @@ func (r *indexResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	if waitTask.Status == "succeeded" {
-		index, err := r.client.GetIndex(createIndexConfig.Uid)
+	if waitTask.Status != meilisearch.TaskStatusSucceeded {
+		resp.Diagnostics.AddError(
+			"Error creating index",
+			"Index creation task finished with status "+string(waitTask.Status)+": "+waitTask.Error.Message,
+		)
+		return
+	}
 
-		if err != nil {
-			resp.Diagnostics.AddError(
-				"Error fetching index data",
-				"unexpected error: "+err.Error(),
-			)
-			return
-		}
+	index, err := r.client.GetIndex(createIndexConfig.Uid)
 
-		plan.UID = types.StringValue(index.UID)
-		plan.PrimaryKey = types.StringValue(index.PrimaryKey)
-		plan.CreatedAt = types.StringValue(index.CreatedAt.Format(time.RFC3339))
-		plan.UpdatedAt = types.StringValue(index.UpdatedAt.Format(time.RFC3339))
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Error fetching index data",
+			"unexpected error: "+err.Error(),
+		)
+		return
+	}
 
-		settings := r.buildSettingsFromPlan(ctx, &plan, &resp.Diagnostics)
-		if resp.Diagnostics.HasError() {
-			return
-		}
+	plan.UID = types.StringValue(index.UID)
+	plan.PrimaryKey = types.StringValue(index.PrimaryKey)
+	plan.CreatedAt = types.StringValue(index.CreatedAt.Format(time.RFC3339))
+	plan.UpdatedAt = types.StringValue(index.UpdatedAt.Format(time.RFC3339))
 
-		if settings != nil {
-			if err := r.applySettings(ctx, index.UID, settings); err != nil {
-				resp.Diagnostics.AddError("Error updating index settings", err.Error())
-				return
-			}
-		}
-
-		r.readSettings(ctx, index.UID, &plan, &resp.Diagnostics)
-		if resp.Diagnostics.HasError() {
-			return
-		}
+	r.applyPlannedSettings(ctx, index.UID, &plan, nil, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
 	plan.ID = types.StringValue("placeholder")
@@ -226,15 +220,14 @@ func (r *indexResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		}
 	}
 
-	// Overwrite items with refreshed state
-	indexState := indexResourceModel{
-		UID:        types.StringValue(index.UID),
-		PrimaryKey: types.StringValue(index.PrimaryKey),
-		CreatedAt:  types.StringValue(index.CreatedAt.Format(time.RFC3339)),
-		UpdatedAt:  types.StringValue(index.UpdatedAt.Format(time.RFC3339)),
-	}
-
-	state = indexState
+	// Overwrite items with refreshed state. The settings attributes are updated
+	// in place by readSettings rather than replaced wholesale: it uses the prior
+	// state to tell which settings this resource manages, and a fresh model would
+	// report every one of them as unmanaged.
+	state.UID = types.StringValue(index.UID)
+	state.PrimaryKey = types.StringValue(index.PrimaryKey)
+	state.CreatedAt = types.StringValue(index.CreatedAt.Format(time.RFC3339))
+	state.UpdatedAt = types.StringValue(index.UpdatedAt.Format(time.RFC3339))
 
 	r.readSettings(ctx, index.UID, &state, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
@@ -267,16 +260,9 @@ func (r *indexResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
-	settings := r.buildSettingsFromPlan(ctx, &plan, &resp.Diagnostics)
+	r.applyPlannedSettings(ctx, state.UID.ValueString(), &plan, &state, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
-	}
-
-	if settings != nil {
-		if err := r.applySettings(ctx, state.UID.ValueString(), settings); err != nil {
-			resp.Diagnostics.AddError("Error updating index settings", err.Error())
-			return
-		}
 	}
 
 	index, err := r.client.GetIndex(state.UID.ValueString())
@@ -292,11 +278,6 @@ func (r *indexResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	plan.PrimaryKey = types.StringValue(index.PrimaryKey)
 	plan.CreatedAt = types.StringValue(index.CreatedAt.Format(time.RFC3339))
 	plan.UpdatedAt = types.StringValue(index.UpdatedAt.Format(time.RFC3339))
-
-	r.readSettings(ctx, index.UID, &plan, &resp.Diagnostics)
-	if resp.Diagnostics.HasError() {
-		return
-	}
 
 	plan.ID = types.StringValue("placeholder")
 
