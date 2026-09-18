@@ -105,7 +105,7 @@ resource "meilisearch_index" "example_with_settings" {
 - `sortable_attributes` (Set of String) Set of attributes that can be used to sort search results.
 - `stop_words` (Set of String) Set of words that will be ignored in search queries.
 - `synonyms` (Map of List of String) Map of synonyms where the key is a word and the value is a list of synonyms for that word.
-- `typo_tolerance` (Attributes) Controls the typo tolerance feature. (see [below for nested schema](#nestedatt--typo_tolerance))
+- `typo_tolerance` (Attributes) Controls the typo tolerance feature. Requires a Meilisearch release that understands `disableOnNumbers`: the Go client always serialises that field, so older servers reject the whole settings payload. (see [below for nested schema](#nestedatt--typo_tolerance))
 
 ### Read-Only
 

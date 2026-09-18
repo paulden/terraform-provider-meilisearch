@@ -88,22 +88,12 @@ resource "meilisearch_index" "settings_test" {
 	sortable_attributes   = ["created_at"]
 	stop_words            = ["the", "a", "an"]
 	dictionary            = ["SQL"]
-	search_cutoff_ms      = 150
 	proximity_precision   = "byWord"
 	separator_tokens      = ["|"]
 	non_separator_tokens  = ["#"]
 
 	synonyms = {
 		"phone" = ["telephone", "mobile"]
-	}
-
-	typo_tolerance = {
-		enabled = true
-		min_word_size_for_typos = {
-			one_typo  = 4
-			two_typos = 8
-		}
-		disable_on_attributes = ["category"]
 	}
 
 	pagination = {
@@ -117,12 +107,6 @@ resource "meilisearch_index" "settings_test" {
 		}
 	}
 
-	localized_attributes = [
-		{
-			locales            = ["fra"]
-			attribute_patterns = ["description"]
-		}
-	]
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
@@ -132,14 +116,9 @@ resource "meilisearch_index" "settings_test" {
 					resource.TestCheckResourceAttr("meilisearch_index.settings_test", "searchable_attributes.#", "2"),
 					resource.TestCheckResourceAttr("meilisearch_index.settings_test", "filterable_attributes.#", "2"),
 					resource.TestCheckResourceAttr("meilisearch_index.settings_test", "stop_words.#", "3"),
-					resource.TestCheckResourceAttr("meilisearch_index.settings_test", "search_cutoff_ms", "150"),
 					resource.TestCheckResourceAttr("meilisearch_index.settings_test", "proximity_precision", "byWord"),
-					resource.TestCheckResourceAttr("meilisearch_index.settings_test", "typo_tolerance.enabled", "true"),
-					resource.TestCheckResourceAttr("meilisearch_index.settings_test", "typo_tolerance.min_word_size_for_typos.one_typo", "4"),
 					resource.TestCheckResourceAttr("meilisearch_index.settings_test", "pagination.max_total_hits", "500"),
 					resource.TestCheckResourceAttr("meilisearch_index.settings_test", "faceting.max_values_per_facet", "50"),
-					resource.TestCheckResourceAttr("meilisearch_index.settings_test", "localized_attributes.#", "1"),
-					resource.TestCheckResourceAttr("meilisearch_index.settings_test", "localized_attributes.0.locales.#", "1"),
 				),
 			},
 			// Update settings
@@ -156,10 +135,6 @@ resource "meilisearch_index" "settings_test" {
 	stop_words            = ["the"]
 	distinct_attribute    = "category"
 
-	typo_tolerance = {
-		enabled = false
-	}
-
 	pagination = {
 		max_total_hits = 1000
 	}
@@ -170,8 +145,71 @@ resource "meilisearch_index" "settings_test" {
 					resource.TestCheckResourceAttr("meilisearch_index.settings_test", "searchable_attributes.#", "1"),
 					resource.TestCheckResourceAttr("meilisearch_index.settings_test", "sortable_attributes.#", "2"),
 					resource.TestCheckResourceAttr("meilisearch_index.settings_test", "distinct_attribute", "category"),
-					resource.TestCheckResourceAttr("meilisearch_index.settings_test", "typo_tolerance.enabled", "false"),
 					resource.TestCheckResourceAttr("meilisearch_index.settings_test", "pagination.max_total_hits", "1000"),
+					// Settings dropped from the configuration are reset server-side.
+					testCheckSettingJSON("index-settings", "dictionary", `[]`),
+					testCheckSettingJSON("index-settings", "separatorTokens", `[]`),
+				),
+			},
+		},
+	})
+}
+
+// TestAccIndexResourceWithRecentSettings covers settings that older supported
+// Meilisearch releases reject outright: v1.7 knows neither `searchCutoffMs` nor
+// `localizedAttributes`.
+func TestAccIndexResourceWithRecentSettings(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { requireMeilisearchVersion(t, 1, 15) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig + `
+resource "meilisearch_index" "recent_settings_test" {
+	uid = "index-recent-settings"
+	primary_key = "id"
+
+	search_cutoff_ms = 150
+
+	localized_attributes = [
+		{
+			locales            = ["fra"]
+			attribute_patterns = ["description"]
+		}
+	]
+
+	typo_tolerance = {
+		enabled = true
+		min_word_size_for_typos = {
+			one_typo  = 4
+			two_typos = 8
+		}
+		disable_on_attributes = ["category"]
+	}
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("meilisearch_index.recent_settings_test", "search_cutoff_ms", "150"),
+					resource.TestCheckResourceAttr("meilisearch_index.recent_settings_test", "localized_attributes.#", "1"),
+					resource.TestCheckResourceAttr("meilisearch_index.recent_settings_test", "localized_attributes.0.locales.#", "1"),
+					resource.TestCheckResourceAttr("meilisearch_index.recent_settings_test", "typo_tolerance.enabled", "true"),
+					resource.TestCheckResourceAttr("meilisearch_index.recent_settings_test", "typo_tolerance.min_word_size_for_typos.one_typo", "4"),
+					testCheckSettingJSON("index-recent-settings", "searchCutoffMs", `150`),
+				),
+			},
+			// All of them must be resettable too.
+			{
+				Config: providerConfig + `
+resource "meilisearch_index" "recent_settings_test" {
+	uid = "index-recent-settings"
+	primary_key = "id"
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckNoResourceAttr("meilisearch_index.recent_settings_test", "search_cutoff_ms"),
+					resource.TestCheckNoResourceAttr("meilisearch_index.recent_settings_test", "localized_attributes.#"),
+					resource.TestCheckNoResourceAttr("meilisearch_index.recent_settings_test", "typo_tolerance.enabled"),
+					testCheckSettingJSON("index-recent-settings", "localizedAttributes", `null`),
 				),
 			},
 		},
@@ -180,6 +218,9 @@ resource "meilisearch_index" "settings_test" {
 
 func TestAccIndexResourceWithEmbedders(t *testing.T) {
 	resource.Test(t, resource.TestCase{
+		// Meilisearch v1.7 only accepts `embedders` when the vector store
+		// experimental feature is switched on.
+		PreCheck:                 func() { requireMeilisearchVersion(t, 1, 15) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{

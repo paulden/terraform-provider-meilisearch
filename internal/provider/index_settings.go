@@ -222,7 +222,7 @@ func indexSettingsSchemaAttributes() map[string]schema.Attribute {
 			ElementType: types.StringType,
 		},
 		"typo_tolerance": schema.SingleNestedAttribute{
-			Description: "Controls the typo tolerance feature.",
+			Description: "Controls the typo tolerance feature. Requires a Meilisearch release that understands `disableOnNumbers`: the Go client always serialises that field, so older servers reject the whole settings payload.",
 			Optional:    true,
 			Attributes: map[string]schema.Attribute{
 				"enabled": schema.BoolAttribute{

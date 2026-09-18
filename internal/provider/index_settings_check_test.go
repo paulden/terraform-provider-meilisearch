@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -21,6 +23,49 @@ const (
 	testMeilisearchHost = "http://localhost:7700"
 	testMeilisearchKey  = "T35T-M45T3R-K3Y"
 )
+
+// requireMeilisearchVersion skips the test when the Meilisearch under test is
+// older than major.minor.
+//
+// Not every index setting exists in every supported Meilisearch release: v1.7
+// rejects `searchCutoffMs` and `localizedAttributes` outright, and only accepts
+// `embedders` when the vector store experimental feature is enabled. The
+// threshold used by callers is the oldest release in the CI matrix that these
+// settings have actually been verified against, so it is deliberately
+// conservative: a version below it skips rather than fails.
+func requireMeilisearchVersion(t *testing.T, major, minor int) {
+	t.Helper()
+
+	data, err := meilisearchRequest(http.MethodGet, "/version", "")
+	if err != nil {
+		t.Fatalf("could not read Meilisearch version: %s", err)
+	}
+
+	var version struct {
+		PkgVersion string `json:"pkgVersion"`
+	}
+	if err := json.Unmarshal(data, &version); err != nil {
+		t.Fatalf("could not parse Meilisearch version: %s", err)
+	}
+
+	parts := strings.SplitN(version.PkgVersion, ".", 3)
+	if len(parts) < 2 {
+		t.Fatalf("unexpected Meilisearch version %q", version.PkgVersion)
+	}
+
+	gotMajor, err := strconv.Atoi(parts[0])
+	if err != nil {
+		t.Fatalf("unexpected Meilisearch version %q", version.PkgVersion)
+	}
+	gotMinor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		t.Fatalf("unexpected Meilisearch version %q", version.PkgVersion)
+	}
+
+	if gotMajor < major || (gotMajor == major && gotMinor < minor) {
+		t.Skipf("Meilisearch %s does not support every setting under test, need >= %d.%d", version.PkgVersion, major, minor)
+	}
+}
 
 func meilisearchRequest(method, path, body string) ([]byte, error) {
 	var payload io.Reader
